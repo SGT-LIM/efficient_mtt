@@ -297,7 +297,17 @@ def get_time():
     return str(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()))
 
 
-def epoch(mode, dataloader, net, optimizer, criterion, args, aug, texture=False):
+def compute_gradient_penalty(loss, parameters, K):
+    # Compute gradients with respect to model parameters
+    gradients = torch.autograd.grad(outputs=loss, inputs=parameters, grad_outputs=torch.ones(loss.size(), device=loss.device), create_graph=True)
+    # Flatten the gradients to calculate the norm over all parameters as a single vector
+    gradients = torch.cat([grad.view(-1) for grad in gradients if grad is not None])
+    gradient_norm = gradients.norm(2)
+    gradient_penalty = ((gradient_norm - K) ** 2).mean()  # Mean over the gradient penalty across all parameters
+    return gradient_penalty
+
+
+def epoch(mode, dataloader, net, optimizer, criterion, lambda_coef, args, aug, texture=False):
     loss_avg, acc_avg, num_exp = 0, 0, 0
     net = net.to(args.device)
 
@@ -330,16 +340,22 @@ def epoch(mode, dataloader, net, optimizer, criterion, args, aug, texture=False)
 
         output = net(img)
         loss = criterion(output, lab)
+        Clipped_CELoss = lambda_coef * loss
 
         acc = np.sum(np.equal(np.argmax(output.cpu().data.numpy(), axis=-1), lab.cpu().data.numpy()))
 
-        loss_avg += loss.item()*n_b
+        loss_avg += Clipped_CELoss.item()*n_b
         acc_avg += acc
         num_exp += n_b
 
         if mode == 'train':
             optimizer.zero_grad()
-            loss.backward()
+            
+            gp = compute_gradient_penalty(loss, net.parameters(), args.K)
+            
+            total_loss = Clipped_CELoss + args.mu * gp
+            total_loss.backward()
+
             optimizer.step()
 
     loss_avg /= num_exp
