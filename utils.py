@@ -351,7 +351,8 @@ def epoch(mode, dataloader, net, optimizer, criterion, lambda_coef, args, aug, t
         if mode == 'train':
             optimizer.zero_grad()
             
-            gp = compute_gradient_penalty(loss, net.parameters(), args.K)
+            # gp = compute_gradient_penalty(loss, net.parameters(), args.K)
+            gp = compute_gradient_penalty(output, net.parameters(), args.K)
             
             total_loss = Clipped_CELoss + args.mu * gp
             total_loss.backward()
