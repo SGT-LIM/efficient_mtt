@@ -297,14 +297,16 @@ def get_time():
     return str(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()))
 
 
-def compute_gradient_penalty(loss, parameters, K):
-    # Compute gradients with respect to model parameters
-    gradients = torch.autograd.grad(outputs=loss, inputs=parameters, grad_outputs=torch.ones(loss.size(), device=loss.device), create_graph=True)
-    # Flatten the gradients to calculate the norm over all parameters as a single vector
-    gradients = torch.cat([grad.view(-1) for grad in gradients if grad is not None])
-    gradient_norm = gradients.norm(2)
-    gradient_penalty = ((gradient_norm - K) ** 2).mean()  # Mean over the gradient penalty across all parameters
-    return gradient_penalty
+# def compute_gradient_penalty(loss, parameters, K):
+#     # Compute gradients with respect to model parameters
+#     gradients = torch.autograd.grad(outputs=loss, inputs=parameters, grad_outputs=torch.ones(loss.size(), device=loss.device), create_graph=True)
+#     print('first grad[0]: ', gradients[0])
+#     # Flatten the gradients to calculate the norm over all parameters as a single vector
+#     gradients = torch.cat([grad.view(-1) for grad in gradients if grad is not None])
+#     print('second grad shape: ', gradients.shape)
+#     gradient_norm = gradients.norm(2)
+#     gradient_penalty = ((gradient_norm - K) ** 2).mean()  # Mean over the gradient penalty across all parameters
+#     return gradient_penalty
 
 
 def epoch(mode, dataloader, net, optimizer, criterion, lambda_coef, args, aug, texture=False):
@@ -336,31 +338,40 @@ def epoch(mode, dataloader, net, optimizer, criterion, lambda_coef, args, aug, t
         if args.dataset == "ImageNet" and mode != "train":
             lab = torch.tensor([class_map[x.item()] for x in lab]).to(args.device)
 
-        n_b = lab.shape[0]
+        n_b = lab.shape[0] # 256
 
         output = net(img)
+        # print('output: ', output)
         loss = criterion(output, lab)
+        # print('loss: ', loss)
         Clipped_CELoss = lambda_coef * loss
+
+
+        # gradients = torch.autograd.grad(outputs=output, inputs=net.parameters(), grad_outputs=torch.ones(output.size(), device=output.device), create_graph=True, retain_graph=True)[0]
+        gradients = torch.autograd.grad(outputs=loss, inputs=net.parameters(), grad_outputs=torch.ones(loss.size(), device=loss.device), create_graph=True, retain_graph=True)[0]
+
+        gradients = gradients.view(gradients.size(0), -1)
+        # print('reshaped grad shape: ', gradients.shape) # 
+        gradient_penalty = ((gradients.norm(2, dim=1) - args.K) ** 2).mean()
+        # print('gradient_penalty: ', gradient_penalty) # 
+
+        loss_SC = Clipped_CELoss + gradient_penalty
+        print(loss_SC)
 
         acc = np.sum(np.equal(np.argmax(output.cpu().data.numpy(), axis=-1), lab.cpu().data.numpy()))
 
-        loss_avg += Clipped_CELoss.item()*n_b
+        loss_avg += loss_SC.item()*n_b
         acc_avg += acc
         num_exp += n_b
 
         if mode == 'train':
             optimizer.zero_grad()
-            
-            # gp = compute_gradient_penalty(loss, net.parameters(), args.K)
-            gp = compute_gradient_penalty(output, net.parameters(), args.K)
-            
-            total_loss = Clipped_CELoss + args.mu * gp
-            total_loss.backward()
-
+            loss_SC.backward()
             optimizer.step()
 
     loss_avg /= num_exp
     acc_avg /= num_exp
+    print('loss_avg: ', loss_avg)
 
     return loss_avg, acc_avg
 

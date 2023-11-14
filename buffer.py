@@ -3,8 +3,7 @@ import argparse
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from utils import get_dataset, get_network, get_daparam,\
-    TensorDataset, epoch, ParamDiffAug
+from utils import get_dataset, get_network, get_daparam, TensorDataset, epoch, ParamDiffAug
 import copy
 import numpy as np
 
@@ -86,6 +85,7 @@ def main(args):
 
             if e < 5:
                 lambda_coef = lambda_values[e]
+                print('lambda_coef: ', lambda_coef)
 
             train_loss, train_acc = epoch("train", dataloader=trainloader, net=teacher_net, optimizer=teacher_optim,
                                         criterion=criterion, lambda_coef=lambda_coef, args=args, aug=True)
